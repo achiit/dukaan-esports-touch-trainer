@@ -1,0 +1,783 @@
+<title>Esports Touch Trainer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Layout concept: one full-height app. Menu and results are scrolling panels; training is a fixed
+   arena (no page scroll) under a compact toolbar. Dark HUD palette, one accent, amber reserved for the
+   reaction cue, green/red reserved for result deltas. Single dark look by choice. */
+:root{
+  --bg:#0b0e13; --panel:#121820; --panel2:#19222d; --line:#26303d; --line2:#1d2631;
+  --fg:#e8edf4; --dim:#8794a6; --accent:#56b6ff; --accent-ink:#06121d;
+  --signal:#ffb224; --good:#46d19a; --bad:#ff7070;
+  --font-d:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;
+  --font-b:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-m:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 var(--font-b);
+  padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px));
+  overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+}
+.screen{height:100%;display:flex;flex-direction:column;min-width:0}
+.scroll{overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;padding-block:16px 24px}
+.wrap{width:100%;max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.brand{font:700 clamp(30px,6vw,46px)/1 var(--font-d);letter-spacing:.06em;text-transform:uppercase}
+.brand b{color:var(--accent);font-weight:700}
+.sub{margin:6px 0 0;color:var(--dim);max-width:56ch}
+h2{font:600 15px var(--font-d);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:10px 0 0}
+.btn{height:36px;min-width:40px;padding:0 8px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);
+  font:600 14px var(--font-d);letter-spacing:.05em;text-transform:uppercase;touch-action:manipulation;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:#3a4859}
+.btn:focus-visible,.ctl .lk:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.armed{background:var(--bad);border-color:var(--bad);color:#1a0707}
+.btn.on{border-color:var(--accent);color:var(--accent)}
+.btn[disabled]{opacity:.38;pointer-events:none}
+.btn.big{height:56px;font-size:22px;border-radius:10px}
+.btn.danger{color:var(--bad)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rounds{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.rc{text-align:left;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;touch-action:manipulation;font:inherit}
+.rc[aria-pressed="true"]{border-color:var(--accent);background:var(--panel2)}
+.rc .n{font:700 22px var(--font-d);letter-spacing:.06em;text-transform:uppercase}
+.rc .s{color:var(--dim);font-size:12.5px;margin-top:2px;font-family:var(--font-m)}
+.hint{color:var(--dim);font-size:12.5px;margin:0}
+.about{color:var(--dim);font-size:12.5px;border:1px solid var(--line2);border-radius:10px;padding:10px 14px}
+.about summary{cursor:pointer;color:var(--fg);font:600 14px var(--font-d);letter-spacing:.1em;text-transform:uppercase}
+.about ul{margin:8px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+
+/* training screen */
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0}
+.bar .grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.seg{display:flex}
+.seg .btn{border-radius:0}
+.seg .btn:first-child{border-radius:8px 0 0 8px}
+.seg .btn:last-child{border-radius:0 8px 8px 0;margin-left:-1px}
+.seg .btn.on{background:var(--panel2);position:relative}
+.timer{font:600 17px var(--font-m);font-variant-numeric:tabular-nums;min-width:70px;text-align:center;color:var(--dim)}
+.timer.run{color:var(--accent)}
+#t-start{min-width:72px}#t-react{min-width:104px}#t-show{min-width:104px}
+#arena{position:relative;flex:1;min-height:0;margin-bottom:8px;border-radius:10px;background:#0e131a;border:1px solid var(--line);overflow:hidden;touch-action:none}
+#arena.editing{background-image:radial-gradient(#26303d 1px,transparent 1px);background-size:24px 24px}
+#note{position:absolute;left:50%;top:8px;transform:translateX(-50%);font:12px var(--font-m);color:var(--dim);pointer-events:none;white-space:nowrap;z-index:6;max-width:96%;overflow:hidden;text-overflow:ellipsis}
+#cards{position:absolute;inset:0;pointer-events:none;z-index:5}
+.ctl{position:absolute;left:0;top:0;width:var(--w);height:var(--w);border-radius:50%;touch-action:none;will-change:transform;-webkit-user-select:none;user-select:none}
+.ctl .face{position:absolute;inset:0;border-radius:50%;background:var(--panel2);border:2px solid #36445a;display:grid;place-items:center;text-align:center;
+  font:700 calc(var(--w)*.23)/1 var(--font-d);letter-spacing:.06em;color:var(--fg);pointer-events:none}
+.ctl .face small{display:block;font-size:.55em;letter-spacing:.14em;color:var(--dim);margin-top:2px}
+.ctl.down .face{background:#25364a;border-color:var(--accent);transform:scale(.95)}
+.ctl.on .face{background:#1b3550;border-color:var(--accent);color:var(--accent)}
+.ctl.signal .face{border-color:var(--signal);box-shadow:0 0 0 5px rgba(255,178,36,.38)}
+.ctl.snap .face,.ctl .knob.snap{transition:transform .09s ease-out}
+.ctl.t-joy .face{background:#111821;border-color:#2c3a4c}
+.ctl.t-joy .face::after{content:"";position:absolute;inset:24%;border-radius:50%;border:1px dashed #2c3a4c}
+.ctl .knob{position:absolute;left:27.5%;top:27.5%;width:45%;height:45%;border-radius:50%;background:#2a3a50;border:2px solid #4a6078;will-change:transform}
+.ctl.down .knob{border-color:var(--accent);background:#2c4a6a}
+.ctl.t-joy.down .face{transform:none}
+.ctl.t-rfire .face{background:#1d2530}
+.editing .ctl .face{border-style:dashed}
+.ctl .lk,.ctl .free{display:none;position:absolute;right:-8px;top:-8px;width:32px;height:32px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--dim);padding:0;place-items:center;cursor:pointer;z-index:2;touch-action:manipulation}
+.editing .ctl .lk,.editing .ctl .free{display:grid}
+.ctl .free{cursor:default}
+.ctl .lk svg,.ctl .free svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.ctl .lk[aria-pressed="true"]{color:var(--fg)}
+.ctl .lk[aria-pressed="false"]{color:var(--accent);border-color:var(--accent)}
+.card{position:absolute;left:0;top:0;width:max-content;max-width:150px;background:rgba(10,14,19,.95);border:1px solid var(--line);border-radius:7px;padding:4px 6px;font:10px/1.3 var(--font-m);font-variant-numeric:tabular-nums}
+.card h4{margin:0 0 2px;font:700 12px var(--font-d);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.card .r{display:flex;justify-content:space-between;gap:8px}
+.card .r span:first-child{color:var(--dim)}
+#toast{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 14px;z-index:50;font-size:13px;max-width:92vw}
+
+/* results */
+.rbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 0;position:sticky;top:0;background:var(--bg);z-index:3}
+.rbar h1{font:700 22px var(--font-d);letter-spacing:.08em;text-transform:uppercase;margin:0 6px 0 4px}
+.sec{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.sec h3{margin:0 0 8px;font:700 19px var(--font-d);letter-spacing:.1em;text-transform:uppercase}
+.sec h3 em{font-style:normal;color:var(--dim);font-size:13px;letter-spacing:.1em;margin-left:6px}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 22px}
+.kv div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line2);padding:4px 0}
+.kv span:first-child{color:var(--dim)}
+.kv span:last-child{font-family:var(--font-m);font-variant-numeric:tabular-nums;text-align:right}
+.tw{overflow-x:auto;max-width:100%}
+.tbl{width:100%;border-collapse:collapse;font:12px var(--font-m);font-variant-numeric:tabular-nums}
+.tbl th{color:var(--dim);font-weight:500;text-align:right;padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{text-align:right;padding:4px 6px;border-bottom:1px solid var(--line2);white-space:nowrap}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl.cmp td:first-child{white-space:normal;min-width:100px;font-family:var(--font-b)}
+.tbl .good{color:var(--good)}.tbl .bad{color:var(--bad)}
+details.log{margin-top:8px}
+details.log summary{cursor:pointer;color:var(--dim);font-size:12.5px}
+.empty{color:var(--dim);padding:6px 0}
+#p-stop{display:none;position:absolute;right:10px;top:10px;width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:rgba(18,24,32,.7);color:var(--dim);padding:0;place-items:center;z-index:8;touch-action:manipulation;cursor:pointer}
+#p-stop svg{width:18px;height:18px;fill:currentColor;pointer-events:none}
+body.play #p-stop{display:grid}
+body.play #bar,body.play #note,body.play #toast{display:none!important}
+body.play #arena{margin:0;border:0;border-radius:0}
+@media (max-width:520px){.grid2,.rounds{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<section id="s-main" class="screen scroll">
+  <div class="wrap">
+    <header>
+      <div class="brand">Esports <b>Touch</b> Trainer</div>
+      <p class="sub">Practise finger placement, tap speed, joystick control and fire-button drags. Every number comes from real touch events on this page. It does not connect to or control any game.</p>
+    </header>
+    <button class="btn primary big" id="m-start">Start Training</button>
+    <button class="btn big" id="m-full">Full Screen Landscape</button>
+    <div class="grid2">
+      <button class="btn big" id="m-hud">HUD Customization</button>
+      <button class="btn big" id="m-results">Show Results</button>
+    </div>
+    <h2>Round Selection</h2>
+    <div class="rounds" id="m-rounds"></div>
+    <p class="hint">Landscape gives the most room. Each round stores its own data. Compare them on the results screen after finishing both.</p>
+    <button class="btn danger" id="m-reset">Reset Session</button>
+    <details class="about">
+      <summary>How measurements work</summary>
+      <ul>
+        <li><b>Press duration</b>: finger down to finger up on one button. <b>Interval</b>: finger down to the next finger down on the same button. <b>Reaction time</b>: cue shown to finger down, only when the reaction test is on. <b>Drag duration</b>: first movement to release.</li>
+        <li>Times use the browser's pointer event timestamps (same clock as performance.now()). They show when the browser received each touch, not how fast any game would respond. Screen touch sampling limits precision to a few milliseconds.</li>
+        <li>The reaction clock starts at the next screen frame after the cue is switched on. Display delay is not measured, so compare reaction times only within this app.</li>
+        <li>Distances are in CSS pixels, so the same drag on a different screen size gives a different number. Pausing or finishing discards a press that is still being held; joystick movement up to that moment is kept.</li>
+        <li>Layout, locks and rounds are saved in this browser only.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+<section id="s-train" class="screen" hidden>
+  <div class="bar" id="bar">
+    <div class="grp" id="bar-train">
+      <button class="btn" id="t-back" aria-label="Back to menu" title="Back to menu">&larr;</button>
+      <div class="seg" role="group" aria-label="Round">
+        <button class="btn" id="t-r1">R1</button><button class="btn" id="t-r2">R2</button>
+      </div>
+      <span class="timer" id="t-timer">00:00.0</span>
+      <button class="btn primary" id="t-start">Start</button>
+      <button class="btn" id="t-finish">Finish</button>
+      <button class="btn" id="t-layout">Layout</button>
+      <button class="btn" id="t-react" aria-pressed="false">Reaction Off</button>
+      <button class="btn" id="t-show">Show Results</button>
+    </div>
+    <div class="grp" id="bar-edit" hidden>
+      <button class="btn primary" id="e-done">Done</button>
+      <button class="btn" id="e-lock">Lock All</button>
+      <button class="btn" id="e-unlock">Unlock All</button>
+      <button class="btn" id="e-reset">Reset Layout</button>
+      <span class="hint">Drag a button to move it. Tap its padlock to lock or unlock. Joystick and Right Fire always move.</span>
+    </div>
+  </div>
+  <div id="arena"><button id="p-stop" aria-label="Stop and show toolbar"><svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg></button><div id="note"></div><div id="cards"></div></div>
+</section>
+
+<section id="s-res" class="screen scroll" hidden>
+  <div class="wrap">
+    <div class="rbar">
+      <button class="btn" id="r-back">&larr; Menu</button>
+      <h1>Results</h1>
+      <div class="seg" role="group" aria-label="View">
+        <button class="btn" id="r-1">Round 1</button><button class="btn" id="r-2">Round 2</button><button class="btn" id="r-c">Compare</button>
+      </div>
+    </div>
+    <div id="r-body" style="display:flex;flex-direction:column;gap:12px"></div>
+  </div>
+</section>
+<div id="toast" hidden></div>
+
+<script>
+(()=>{
+'use strict';
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const now=()=>performance.now();
+/* Event timestamps share performance.now()'s clock; fall back if a browser reports something else. */
+const ts=e=>(e.timeStamp>0&&Math.abs(e.timeStamp-performance.now())<10000)?e.timeStamp:performance.now();
+
+const CTL=[
+  {id:'jump',  name:'Jump',        html:'JUMP',                    type:'tap',   k:1.0,  lock:true},
+  {id:'crouch',name:'Sit / Crouch',html:'SIT<small>CROUCH</small>',type:'tap',   k:1.0,  lock:true},
+  {id:'run',   name:'Run',         html:'RUN',                     type:'toggle',k:1.0,  lock:true},
+  {id:'joy',   name:'Joystick',    html:'',                        type:'joy',   k:2.5,  lock:false},
+  {id:'gloo',  name:'Gloo Wall',   html:'GLOO<small>WALL</small>', type:'tap',   k:1.05, lock:true},
+  {id:'lfire', name:'Left Fire',   html:'FIRE<small>LEFT</small>', type:'tap',   k:1.2,  lock:true},
+  {id:'rfire', name:'Right Fire',  html:'FIRE<small>RIGHT</small>',type:'rfire', k:1.4,  lock:false}
+];
+const BY=Object.fromEntries(CTL.map(c=>[c.id,c]));
+const TAPS=CTL.filter(c=>c.type!=='joy').map(c=>c.id);
+const DEF={
+  L:{joy:[.17,.66],lfire:[.08,.30],run:[.36,.80],gloo:[.60,.82],crouch:[.72,.84],jump:[.94,.30],rfire:[.85,.58]},
+  P:{joy:[.28,.80],lfire:[.13,.50],run:[.50,.58],gloo:[.58,.74],crouch:[.62,.90],jump:[.86,.50],rfire:[.80,.68]}
+};
+const DIRS=['N','NE','E','SE','S','SW','W','NW'];
+const KEY='ett.v1';
+const MOVE_T=10, DRAG_T=8;
+
+function newRound(n){
+  const d={};
+  for(const c of CTL){
+    if(c.type==='joy') d[c.id]={ss:[]};
+    else{
+      d[c.id]={p:[],canc:0,rx:[],miss:0};
+      if(c.type==='toggle') d[c.id].acts=[];
+      if(c.type==='rfire') d[c.id].drags=[];
+    }
+  }
+  return {n,status:'new',accum:0,segStart:null,seg:0,tok:0,d};
+}
+const S={cur:1,rounds:[newRound(1),newRound(2)],editing:false,editFrom:'main',locks:{},layout:{L:{},P:{}},react:false,resultsOn:false,resView:1,runOn:false,play:false,rot:false};
+const R=()=>S.rounds[S.cur-1];
+const isLocked=id=>S.locks[id]!==false;
+
+/* ---------- persistence ---------- */
+function saveState(){
+  try{
+    localStorage.setItem(KEY,JSON.stringify({layout:S.layout,locks:S.locks,react:S.react,cur:S.cur,
+      rounds:S.rounds.map(r=>({...r,segStart:null,status:r.status==='running'?'paused':r.status}))}));
+  }catch(e){}
+}
+function loadState(){
+  try{
+    const j=JSON.parse(localStorage.getItem(KEY)||'null'); if(!j)return;
+    if(j.layout&&j.layout.L&&j.layout.P)S.layout=j.layout;
+    if(j.locks&&typeof j.locks==='object')S.locks=j.locks;
+    S.react=!!j.react;
+    if(j.cur===1||j.cur===2)S.cur=j.cur;
+    if(Array.isArray(j.rounds)&&j.rounds.length===2){
+      S.rounds=j.rounds.map((r,i)=>{
+        const base=newRound(i+1);
+        if(!r||!r.d)return base;
+        for(const id in base.d)if(r.d[id])Object.assign(base.d[id],r.d[id]);
+        return {...base,status:r.status==='running'?'paused':(r.status||'new'),accum:+r.accum||0,seg:+r.seg||0};
+      });
+    }
+  }catch(e){}
+}
+
+/* ---------- arena geometry ---------- */
+const arena=$('#arena'), cardsEl=$('#cards'), noteEl=$('#note');
+const A={W:0,H:0,o:'L',s:56,l:0,t:0};
+function LP(e){return S.rot?{x:e.clientY,y:innerWidth-e.clientX}:{x:e.clientX-A.l,y:e.clientY-A.t};}
+function syncOrigin(){if(S.rot){A.l=0;A.t=0;}else{const r=arena.getBoundingClientRect();A.l=r.left;A.t=r.top;}}
+function measure(){
+  if(!arena.clientWidth)return; syncOrigin();
+  A.W=arena.clientWidth;A.H=arena.clientHeight;A.o=A.W>=A.H?'L':'P';
+  A.s=clamp(A.o==='L'?Math.min(A.H*.17,A.W*.105):Math.min(A.H*.095,A.W*.165),44,84);
+  for(const c of CTL){c.size=c.k*A.s;c.el.style.setProperty('--w',c.size+'px');place(c);}
+  renderCards();
+}
+function posOf(c){
+  const p=S.layout[A.o][c.id]; if(p&&isFinite(p.x)&&isFinite(p.y))return p;
+  const d=DEF[A.o][c.id]; return {x:d[0],y:d[1]};
+}
+function place(c){
+  const p=posOf(c),w=c.size;
+  c.cx=clamp(p.x*A.W,w/2,A.W-w/2); c.cy=clamp(p.y*A.H,w/2,A.H-w/2);
+  c.el.style.transform=`translate(${c.cx-w/2}px,${c.cy-w/2}px)`;
+}
+
+/* ---------- build controls ---------- */
+const C={}; // runtime per control
+const ICON_L='<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+const ICON_U='<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-1.8"/></svg>';
+const ICON_M='<svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>';
+function refreshLock(c){
+  if(!c.lk)return; const l=isLocked(c.id);
+  c.lk.setAttribute('aria-pressed',String(l)); c.lk.innerHTML=l?ICON_L:ICON_U;
+  c.lk.setAttribute('aria-label',(l?'Unlock ':'Lock ')+c.name);
+}
+for(const c of CTL){
+  const el=document.createElement('div'); el.className='ctl t-'+c.type; el.dataset.id=c.id;
+  el.innerHTML='<div class="face">'+(c.type==='joy'?'<div class="knob"></div>':c.html)+'</div>';
+  c.face=el.firstChild; c.knob=el.querySelector('.knob');
+  if(c.lock){
+    const b=document.createElement('button'); b.className='lk'; b.type='button';
+    b.addEventListener('pointerdown',e=>e.stopPropagation());
+    b.addEventListener('click',()=>{S.locks[c.id]=!isLocked(c.id);refreshLock(c);saveState();});
+    el.appendChild(b); c.lk=b; refreshLock(c);
+  }else{
+    const f=document.createElement('div'); f.className='free'; f.title='Always movable'; f.innerHTML=ICON_M; el.appendChild(f);
+  }
+  arena.appendChild(el); c.el=el; C[c.id]={ptrs:new Map()};
+  el.addEventListener('pointerdown',e=>down(c,e));
+  el.addEventListener('pointermove',e=>move(c,e));
+  el.addEventListener('pointerup',e=>up(c,e,false));
+  el.addEventListener('pointercancel',e=>up(c,e,true));
+  el.addEventListener('lostpointercapture',e=>{if(C[c.id].ptrs.has(e.pointerId))up(c,e,true);});
+}
+arena.addEventListener('contextmenu',e=>e.preventDefault());
+arena.addEventListener('dragstart',e=>e.preventDefault());
+
+/* ---------- round clock ---------- */
+const running=()=>R().status==='running';
+const clockOf=(r,t)=>r.accum+(r.segStart!=null?t-r.segStart:0);
+function recFor(t){const r=R();return(r.status==='running'&&t>=r.segStart)?r:null;}
+
+/* ---------- pointer handling ---------- */
+function down(c,e){
+  if(e.pointerType==='mouse'&&e.button!==0)return;
+  const st=C[c.id]; if(st.ptrs.has(e.pointerId))return;
+  if(c.type==='joy'&&!S.editing&&st.ptrs.size)return;
+  e.preventDefault();
+  try{c.el.setPointerCapture(e.pointerId);}catch(_){}
+  const t=ts(e); syncOrigin(); const q=LP(e);
+  const P={id:e.pointerId,t0:t,x0:q.x,y0:q.y,lx:q.x,ly:q.y,mode:'press',path:0,maxd:0,mv0:null,
+    rec:null,tok:0,ox:q.x-c.cx,oy:q.y-c.cy};
+  st.ptrs.set(e.pointerId,P); c.el.classList.remove('snap'); c.el.classList.add('down');
+  if(S.editing){P.mode=(!c.lock||!isLocked(c.id))?'moveReady':'press';return;}
+  const r=recFor(t); if(r){P.rec=r;P.tok=r.tok;}
+  if(c.type==='joy'){joyStart(c,P,e,t);return;}
+  if(r&&RX.armed&&RX.target===c.id&&t>=RX.at){r.d[c.id].rx.push(t-RX.at);rxEnd();rxSchedule();}
+  if(c.type==='toggle'){
+    const d=r&&r.d.run; const clk=r&&clockOf(r,t);
+    if(!S.runOn){S.runOn=true;if(d){P.pushed={on:clk,off:null};d.acts.push(P.pushed);}}
+    else{S.runOn=false;if(d){const a=d.acts[d.acts.length-1];if(a&&a.off==null){a.off=clk;P.closed=a;}}}
+    c.el.classList.toggle('on',S.runOn);
+  }
+}
+function move(c,e){
+  const P=C[c.id].ptrs.get(e.pointerId); if(!P)return;
+  const t=ts(e), q=LP(e), dx=q.x-P.x0, dy=q.y-P.y0, dist=Math.hypot(dx,dy);
+  if(S.editing){
+    if(P.mode==='moveReady'&&dist>4)P.mode='move';
+    if(P.mode==='press'&&dist>8)lockedHint();
+    if(P.mode==='move')repos(c,P,e);
+    return;
+  }
+  if(c.type==='joy'){joyUpdate(c,P,e,t);return;}
+  if(P.mode==='move'){repos(c,P,e);return;}
+  if(c.lock&&!isLocked(c.id)&&dist>MOVE_T){
+    const rr=P.rec; P.mode='move';P.rec=null;
+    if(c.type==='toggle'){
+      const acts=rr&&rr.d.run.acts;
+      if(acts&&P.pushed){const i=acts.indexOf(P.pushed);if(i>=0)acts.splice(i,1);}
+      if(P.closed)P.closed.off=null;
+      S.runOn=!S.runOn;c.el.classList.toggle('on',S.runOn);
+    }
+    c.el.classList.remove('down'); repos(c,P,e); return;
+  }
+  if(c.type==='rfire'){
+    P.path+=Math.hypot(q.x-P.lx,q.y-P.ly); P.lx=q.x;P.ly=q.y;
+    if(dist>2&&P.mv0==null)P.mv0=t;
+    P.maxd=Math.max(P.maxd,dist);
+    if(P.maxd>=DRAG_T){
+      const w=c.size/2;
+      const tx=clamp(dx,w-c.cx,A.W-w-c.cx), ty=clamp(dy,w-c.cy,A.H-w-c.cy);
+      c.face.style.transform=`translate(${tx}px,${ty}px)`;
+    }
+  }
+}
+function up(c,e,cancel){
+  const st=C[c.id], P=st.ptrs.get(e.pointerId); if(!P)return;
+  st.ptrs.delete(e.pointerId);
+  try{c.el.releasePointerCapture(e.pointerId);}catch(_){}
+  if(!st.ptrs.size)c.el.classList.remove('down');
+  const t=ts(e);
+  if(S.editing){if(P.mode==='move')saveState();return;}
+  if(P.mode==='move'){saveState();return;}
+  const r=P.rec, ok=r&&r.tok===P.tok&&r.status==='running';
+  if(c.type==='joy'){joyEnd(c,P,e,t,ok?r:null);return;}
+  if(c.type==='rfire'){c.el.classList.add('snap');c.face.style.transform='';}
+  if(!ok)return;
+  const d=r.d[c.id];
+  if(cancel){d.canc++;return;}
+  d.p.push([clockOf(r,P.t0),clockOf(r,t),r.seg]);
+  if(c.type==='rfire'&&P.maxd>=DRAG_T&&P.mv0!=null){
+    d.drags.push({d:clockOf(r,P.mv0),dur:t-P.mv0,dist:P.path,maxd:P.maxd});
+  }
+}
+function repos(c,P,e){
+  const w=c.size;
+  const q=LP(e), x=clamp(q.x-P.ox,w/2,A.W-w/2), y=clamp(q.y-P.oy,w/2,A.H-w/2);
+  S.layout[A.o][c.id]={x:x/A.W,y:y/A.H}; place(c);
+}
+let hintAt=0;
+function lockedHint(){const t=now();if(t-hintAt>2000){hintAt=t;toast('Locked. Tap the padlock to unlock it first.');}}
+
+/* ---------- joystick ---------- */
+const dirIdx=(x,y)=>{const a=(Math.atan2(x,-y)*180/Math.PI+360)%360;return Math.round(a/45)%8;};
+function joyStart(c,P,e,t){
+  P.cx=c.cx;P.cy=c.cy;P.max=c.size/2*.775;
+  c.knob.classList.remove('snap');
+  const r=P.rec;
+  P.ss=r?{d:clockOf(r,t),u:null,dist:0,dirMs:Array(8).fill(0),maxD:0}:null;
+  const q=LP(e),dx=q.x-P.cx,dy=q.y-P.cy,m=Math.hypot(dx,dy),k=m>P.max?P.max/m:1;
+  P.kx=dx*k;P.ky=dy*k;P.lt=t;P.ldir=null;
+  joyUpdate(c,P,e,t);
+}
+function joyUpdate(c,P,e,t){
+  const q=LP(e),dx=q.x-P.cx,dy=q.y-P.cy,m=Math.hypot(dx,dy),k=m>P.max?P.max/m:1,kx=dx*k,ky=dy*k,defl=Math.min(1,m/P.max);
+  const ss=P.ss;
+  if(ss){
+    if(P.ldir!=null)ss.dirMs[P.ldir]+=t-P.lt;
+    ss.dist+=Math.hypot(kx-P.kx,ky-P.ky); if(defl>ss.maxD)ss.maxD=defl;
+  }
+  P.lt=t;P.kx=kx;P.ky=ky;P.ldir=defl>.2?dirIdx(kx,ky):null;
+  c.knob.style.transform=`translate(${kx}px,${ky}px)`;
+}
+function joyEnd(c,P,e,t,r){
+  joyUpdate(c,P,e,t);
+  if(P.ss&&r){P.ss.u=clockOf(r,t);r.d.joy.ss.push(P.ss);}
+  P.ss=null; c.knob.classList.add('snap'); c.knob.style.transform='';
+}
+function flushJoy(r,t){
+  for(const P of C.joy.ptrs.values()){
+    if(P.ss&&P.rec===r){ // keep movement up to this moment
+      const now_=t; if(P.ldir!=null)P.ss.dirMs[P.ldir]+=now_-P.lt; P.lt=now_;
+      P.ss.u=clockOf(r,t); r.d.joy.ss.push(P.ss); P.ss=null;
+    }
+  }
+}
+
+/* ---------- reaction test ---------- */
+const RX={timer:0,to:0,target:null,at:0,armed:false};
+function rxEnd(){
+  clearTimeout(RX.to); if(RX.target)BY[RX.target].el.classList.remove('signal');
+  RX.target=null;RX.armed=false;
+}
+function rxStop(){clearTimeout(RX.timer);rxEnd();}
+function rxSchedule(){
+  clearTimeout(RX.timer);
+  if(!S.react||!running()||S.editing)return;
+  RX.timer=setTimeout(()=>{
+    const r=R(); if(!running()||S.editing)return;
+    const id=TAPS[Math.floor(Math.random()*TAPS.length)];
+    RX.target=id;RX.armed=false; BY[id].el.classList.add('signal');
+    requestAnimationFrame(t=>{if(RX.target===id){RX.at=t;RX.armed=true;}});
+    RX.to=setTimeout(()=>{if(RX.target===id){r.d[id].miss++;rxEnd();rxSchedule();}},2500);
+  },1200+Math.random()*2300);
+}
+
+/* ---------- round control ---------- */
+let wake=null;
+const trainEl=$('#s-train'); let wasFS=false;
+function applyPlay(){
+  const iw=innerWidth, ih=innerHeight, st=trainEl.style;
+  document.body.classList.toggle('play',!!S.play);
+  if(trainEl.hidden){S.rot=false;trainEl.removeAttribute('style');}
+  else{
+    S.rot=ih>iw;
+    st.position='fixed';st.left='0';st.top='0';st.zIndex='20';st.background='var(--bg)';st.padding='0';
+    if(S.rot){st.width=ih+'px';st.height=iw+'px';st.transformOrigin='0 0';st.transform=`translateX(${iw}px) rotate(90deg)`;}
+    else{st.width=iw+'px';st.height=ih+'px';st.transform='none';}
+  }
+  requestAnimationFrame(measure);
+}
+function enterPlay(){
+  S.play=true;S.resultsOn=false;applyPlay();syncBar();
+  try{
+    const p=document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen({navigationUI:'hide'});
+    if(p&&p.then)p.then(()=>{wasFS=true;try{screen.orientation.lock('landscape').catch(()=>{});}catch(_){}applyPlay();}).catch(()=>{});
+  }catch(_){}
+}
+function exitPlay(){
+  if(!S.play)return; S.play=false; wasFS=false;
+  try{if(document.fullscreenElement)document.exitFullscreen();}catch(_){}
+  try{screen.orientation.unlock();}catch(_){}
+  applyPlay();syncBar();renderCards();
+}
+$('#p-stop').onclick=()=>{pauseRound('paused');exitPlay();};
+document.addEventListener('fullscreenchange',()=>{
+  if(document.fullscreenElement)wasFS=true;
+  else if(wasFS&&S.play){pauseRound('paused');exitPlay();}
+  else applyPlay();
+});
+addEventListener('resize',()=>{if(!trainEl.hidden)applyPlay();});
+addEventListener('orientationchange',()=>{if(!trainEl.hidden)setTimeout(applyPlay,150);});
+function startRound(){
+  const r=R(); r.status='running';r.segStart=now();r.seg++;r.tok++;
+  S.runOn=false;BY.run.el.classList.remove('on');
+  try{navigator.wakeLock&&navigator.wakeLock.request('screen').then(w=>{wake=w;}).catch(()=>{});}catch(_){}
+  rxSchedule(); syncBar(); enterPlay();
+}
+function pauseRound(status){
+  const r=R(); if(r.status!=='running'){ if(status==='done'&&r.status==='paused'){r.status='done';saveState();syncBar();} return; }
+  const t=now();
+  flushJoy(r,t);
+  if(S.runOn){const a=r.d.run.acts[r.d.run.acts.length-1];if(a&&a.off==null)a.off=clockOf(r,t);}
+  S.runOn=false;BY.run.el.classList.remove('on');
+  r.accum+=t-r.segStart;r.segStart=null;r.status=status;r.tok++;
+  rxStop(); try{wake&&wake.release();wake=null;}catch(_){}
+  saveState(); syncBar(); renderCards();
+}
+let armTimer=0;
+function arm(btn,label,fn){
+  if(btn.classList.contains('armed')){clearTimeout(armTimer);btn.classList.remove('armed');fn();return;}
+  const old=btn.textContent; btn.classList.add('armed');btn.textContent=label;
+  clearTimeout(armTimer); armTimer=setTimeout(()=>{btn.classList.remove('armed');btn.textContent=old;syncBar();renderMain();},2800);
+}
+$('#t-start').onclick=()=>{
+  const r=R();
+  if(r.status==='running')pauseRound('paused');
+  else if(r.status==='done')arm($('#t-start'),'Tap again to wipe',()=>{S.rounds[S.cur-1]=newRound(S.cur);saveState();startRound();});
+  else startRound();
+};
+$('#t-finish').onclick=()=>{pauseRound('done');toast('Round '+S.cur+' finished and saved. Open Show Results to review it.');};
+function selectRound(n){if(running())return;S.cur=n;saveState();syncBar();renderMain();renderCards();}
+$('#t-r1').onclick=()=>selectRound(1);$('#t-r2').onclick=()=>selectRound(2);
+$('#t-react').onclick=()=>{S.react=!S.react;saveState();if(S.react)rxSchedule();else rxStop();syncBar();};
+$('#t-show').onclick=()=>{S.resultsOn=!S.resultsOn;syncBar();renderCards();};
+$('#t-back').onclick=()=>{pauseRound('paused');S.resultsOn=false;go('main');};
+$('#t-layout').onclick=()=>{pauseRound('paused');S.editing=true;S.editFrom='train';syncBar();renderCards();};
+$('#e-done').onclick=()=>{S.editing=false;syncBar();if(S.editFrom==='main')go('main');else renderCards();};
+$('#e-lock').onclick=()=>{CTL.forEach(c=>{if(c.lock){S.locks[c.id]=true;refreshLock(c);}});saveState();};
+$('#e-unlock').onclick=()=>{CTL.forEach(c=>{if(c.lock){S.locks[c.id]=false;refreshLock(c);}});saveState();};
+$('#e-reset').onclick=()=>{S.layout[A.o]={};CTL.forEach(place);saveState();toast('Layout reset to default for this orientation.');};
+document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseRound('paused');});
+
+const fmtClock=ms=>{const s=ms/1000,m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+(s-m*60).toFixed(1).padStart(4,'0');};
+function syncBar(){
+  const r=R();
+  $('#bar-train').hidden=S.editing;$('#bar-edit').hidden=!S.editing;
+  arena.classList.toggle('editing',S.editing);
+  $('#t-r1').classList.toggle('on',S.cur===1);$('#t-r2').classList.toggle('on',S.cur===2);
+  $('#t-r1').disabled=$('#t-r2').disabled=running();
+  const lab={new:'Start',paused:'Resume',running:'Pause',done:'Redo'}[r.status];
+  const sb=$('#t-start'); if(!sb.classList.contains('armed')){sb.textContent=lab;}
+  $('#t-finish').disabled=!(r.status==='running'||r.status==='paused');
+  $('#t-timer').classList.toggle('run',r.status==='running');
+  const rb=$('#t-react'); rb.textContent='Reaction '+(S.react?'On':'Off'); rb.classList.toggle('on',S.react); rb.setAttribute('aria-pressed',String(S.react));
+  const sh=$('#t-show'); sh.textContent=S.resultsOn?'Hide Results':'Show Results'; sh.classList.toggle('on',S.resultsOn); sh.classList.toggle('primary',!S.resultsOn&&(r.status==='paused'||r.status==='done'));
+  tick();
+}
+function tick(){
+  const r=R(); $('#t-timer').textContent=fmtClock(clockOf(r,now()));
+  noteEl.textContent=S.editing?'HUD customization · nothing is recorded'
+    :S.resultsOn?`Results · Round ${S.cur} · ${r.status==='running'?'live':r.status}`
+    :r.status==='running'?`Recording round ${S.cur}`:r.status==='done'?`Round ${S.cur} is finished`
+    :`Not recording · press ${r.status==='paused'?'Resume':'Start'} to record round ${S.cur}`;
+}
+setInterval(()=>{if(!$('#s-train').hidden){tick();if(S.resultsOn&&running())renderCards();}},120);
+
+/* ---------- statistics ---------- */
+const sum=a=>a.reduce((x,y)=>x+y,0);
+function tapStats(r,id){
+  const D=r.d[id],p=D.p,n=p.length,du=p.map(x=>x[1]-x[0]),iv=[];
+  for(let i=1;i<n;i++)if(p[i][2]===p[i-1][2])iv.push(p[i][0]-p[i-1][0]);
+  const min=a=>a.reduce((m,x)=>x<m?x:m,Infinity),max=a=>a.reduce((m,x)=>x>m?x:m,-Infinity);
+  return{n,avg:n?sum(du)/n:null,min:n?min(du):null,max:n?max(du):null,held:sum(du),
+    ivAvg:iv.length?sum(iv)/iv.length:null,ivMin:iv.length?min(iv):null,span:n?p[n-1][1]-p[0][0]:0,
+    holds:du.filter(x=>x>=300).length,canc:D.canc,
+    rxN:D.rx.length,rxAvg:D.rx.length?sum(D.rx)/D.rx.length:null,rxMin:D.rx.length?min(D.rx):null,rxMiss:D.miss};
+}
+const fm=v=>v==null?'—':(v<100?v.toFixed(1):String(Math.round(v)))+' ms';
+const fs=ms=>(ms/1000).toFixed(2)+' s';
+const fb=ms=>fs(ms)+' ('+Math.round(ms)+' ms)';
+const dash=v=>v==null;
+function metrics(r,id){
+  const c=BY[id],out=[],D=r.d[id];
+  const add=(k,label,v,text,o={})=>out.push({k,label,v,text,ct:o.ct!=null?o.ct:text,u:o.u||'n',better:o.better||null});
+  const total=r.segStart!=null?r.accum+(now()-r.segStart):r.accum;
+  if(c.type==='joy'){
+    const ss=D.ss,mt=sum(ss.map(s=>s.u-s.d)),dm=Array(8).fill(0);
+    ss.forEach(s=>s.dirMs.forEach((v,i)=>dm[i]+=v));
+    const top=dm.indexOf(Math.max(...dm)),has=sum(dm)>0;
+    add('sessions','Drag sessions',ss.length,String(ss.length),{better:'high'});
+    add('moveTime','Movement duration',mt,fb(mt),{ct:fs(mt),u:'ms'});
+    add('path','Stick travel distance',sum(ss.map(s=>s.dist)),Math.round(sum(ss.map(s=>s.dist)))+' px',{u:'px'});
+    add('maxD','Max deflection',ss.length?Math.max(...ss.map(s=>s.maxD))*100:null,ss.length?Math.round(Math.max(...ss.map(s=>s.maxD))*100)+' %':'—',{u:'%'});
+    add('dir','Main direction',null,has?DIRS[top]+' ('+fs(dm[top])+')':'—',{ct:has?DIRS[top]+' '+fs(dm[top]):'—'});
+    add('dirs','Time per direction',null,has?DIRS.map((d,i)=>dm[i]>0?d+' '+fs(dm[i]):null).filter(Boolean).join(' · '):'—');
+    return out;
+  }
+  const s=tapStats(r,id), tg=c.type==='toggle';
+  add('taps',tg?'Toggle taps':'Total taps',s.n,String(s.n),{better:'high'});
+  if(tg){
+    const a=D.acts.filter(x=>x.off!=null),rt=sum(a.map(x=>x.off-x.on));
+    add('acts','Run activations',a.length,String(a.length));
+    add('runTime','Total run time',rt,fb(rt),{ct:fs(rt),u:'ms'});
+    add('avgAct','Average run session',a.length?rt/a.length:null,a.length?fm(rt/a.length):'—',{u:'ms'});
+  }
+  add('rate','Taps per second (of round time)',total>0?s.n/(total/1000):null,total>0?(s.n/(total/1000)).toFixed(2)+' /s':'—',{u:'/s',better:'high'});
+  add('avg','Average press duration',s.avg,fm(s.avg),{u:'ms',better:'low'});
+  add('min','Fastest press',s.min,fm(s.min),{u:'ms',better:'low'});
+  add('max','Slowest press',s.max,fm(s.max),{u:'ms',better:'low'});
+  add('iv','Avg interval between taps',s.ivAvg,fm(s.ivAvg),{u:'ms',better:'low'});
+  add('ivMin','Shortest interval',s.ivMin,fm(s.ivMin),{u:'ms',better:'low'});
+  add('held','Total hold time',s.held,fb(s.held),{ct:fs(s.held),u:'ms'});
+  add('span','First press to last release',s.span,fb(s.span),{ct:fs(s.span),u:'ms'});
+  if(c.type==='rfire'){
+    const dr=D.drags;
+    add('holds','Holds (press ≥ 300 ms)',s.holds,String(s.holds));
+    add('drags','Drags',dr.length,String(dr.length));
+    add('dragTime','Total drag duration',sum(dr.map(x=>x.dur)),fb(sum(dr.map(x=>x.dur))),{ct:fs(sum(dr.map(x=>x.dur))),u:'ms'});
+    add('dragDist','Total drag distance',sum(dr.map(x=>x.dist)),Math.round(sum(dr.map(x=>x.dist)))+' px',{u:'px'});
+    add('dragAvg','Average drag distance',dr.length?sum(dr.map(x=>x.dist))/dr.length:null,dr.length?Math.round(sum(dr.map(x=>x.dist))/dr.length)+' px':'—',{u:'px'});
+    add('dragLong','Longest drag',dr.length?Math.max(...dr.map(x=>x.dur)):null,dr.length?fm(Math.max(...dr.map(x=>x.dur))):'—',{u:'ms'});
+  }
+  if(s.rxN+s.rxMiss>0){
+    add('rxAvg','Reaction time (average)',s.rxAvg,fm(s.rxAvg),{u:'ms',better:'low'});
+    add('rxMin','Reaction time (best)',s.rxMin,fm(s.rxMin),{u:'ms',better:'low'});
+    add('rx','Reaction cues hit / missed',null,s.rxN+' / '+s.rxMiss);
+  }
+  if(s.canc>0)add('canc','Cancelled touches (not counted)',s.canc,String(s.canc));
+  return out;
+}
+const CARD={tap:['taps','avg','min','held'],toggle:['taps','acts','runTime'],joy:['moveTime','path','dir'],rfire:['taps','avg','drags','dragTime']};
+const CARDNAME={jump:'Jump',crouch:'Sit / Crouch',run:'Run',joy:'Joystick',gloo:'Gloo Wall',lfire:'Left Fire',rfire:'Right Fire'};
+const SHORT={taps:'Total Taps',avg:'Avg Duration',min:'Fastest Tap',iv:'Avg Interval',held:'Total Time',acts:'Activations',runTime:'Run Time',avgAct:'Avg Session',
+  sessions:'Sessions',moveTime:'Movement',path:'Distance',dir:'Direction',drags:'Drags',dragTime:'Drag Time',dragDist:'Drag Dist',rxAvg:'Reaction'};
+
+/* ---------- results overlay on the training screen ---------- */
+function renderCards(){
+  cardsEl.hidden=!S.resultsOn||S.editing; if(cardsEl.hidden)return;
+  const r=R(); cardsEl.innerHTML='';
+  const made=[];
+  for(const c of CTL){
+    const m=Object.fromEntries(metrics(r,c.id).map(x=>[x.k,x]));
+    const keys=CARD[c.type].slice(); if(m.rxAvg)keys.push('rxAvg');
+    const el=document.createElement('div'); el.className='card';
+    el.innerHTML='<h4>'+CARDNAME[c.id]+'</h4>'+keys.map(k=>`<div class="r"><span>${SHORT[k]||m[k].label}</span><span>${m[k].ct}</span></div>`).join('');
+    cardsEl.appendChild(el); made.push([c,el]);
+  }
+  const placed=[],ov=(a,b)=>Math.max(0,Math.min(a.x+a.w,b.x+b.w)-Math.max(a.x,b.x))*Math.max(0,Math.min(a.y+a.h,b.y+b.h)-Math.max(a.y,b.y));
+  const boxes=CTL.map(c=>({id:c.id,x:c.cx-c.size/2,y:c.cy-c.size/2,w:c.size,h:c.size}));
+  for(const [c,el] of made){
+    const w=el.offsetWidth,h=el.offsetHeight,rad=c.size/2,g=4;
+    const cands=[[0,-1],[0,1],[1,0],[-1,0],[.6,-1],[-.6,-1],[.6,1],[-.6,1],[1,-.6],[-1,-.6],[1,.6],[-1,.6]].map(([ax,ay])=>[
+      c.cx+ax*(rad+g+(ax?w/2:0))-w/2+(ax&&!ay?0:ax*w/2*0), c.cy+ay*(rad+g+(ay?h/2:0))-h/2]);
+    let best=null,bs=1e18;
+    for(const [x0,y0] of cands){
+      const rect={x:clamp(x0,4,A.W-w-4),y:clamp(y0,20,A.H-h-4),w,h};
+      let sc=0; for(const q of placed)sc+=ov(q,rect)*20;
+      for(const b of boxes)sc+=ov(b,rect)*(b.id===c.id?2:3);
+      sc+=Math.hypot(rect.x+w/2-c.cx,rect.y+h/2-c.cy)*.5;
+      if(sc<bs){bs=sc;best=rect;}
+    }
+    placed.push(best); el.style.transform=`translate(${best.x}px,${best.y}px)`;
+  }
+}
+
+/* ---------- results screen ---------- */
+const NAMES=CARDNAME;
+function renderResults(){
+  for(const k of ['1','2','c'])$('#r-'+k).classList.toggle('on',String(S.resView)===k);
+  const body=$('#r-body');
+  body.innerHTML=S.resView==='c'?compareHTML():roundHTML(S.rounds[S.resView-1]);
+}
+function totals(r){
+  const total=r.segStart!=null?r.accum+(now()-r.segStart):r.accum;
+  let taps=0,held=0,rx=[],miss=0;
+  for(const id of TAPS){const s=tapStats(r,id);taps+=s.n;held+=s.held;r.d[id].rx.forEach(x=>rx.push(x));miss+=r.d[id].miss;}
+  const mt=sum(r.d.joy.ss.map(s=>s.u-s.d)),dr=sum(r.d.rfire.drags.map(x=>x.dur));
+  return[
+    {k:'time',label:'Round time (running only)',v:total,text:fb(total),ct:fs(total),u:'ms'},
+    {k:'taps',label:'Total taps, all buttons',v:taps,text:String(taps),ct:String(taps),u:'n',better:'high'},
+    {k:'rate',label:'Taps per second, all buttons',v:total>0?taps/(total/1000):null,text:total>0?(taps/(total/1000)).toFixed(2)+' /s':'—',ct:total>0?(taps/(total/1000)).toFixed(2)+' /s':'—',u:'/s',better:'high'},
+    {k:'held',label:'Total button hold time',v:held,text:fb(held),ct:fs(held),u:'ms'},
+    {k:'joy',label:'Joystick movement time',v:mt,text:fb(mt),ct:fs(mt),u:'ms'},
+    {k:'drag',label:'Right Fire drag time',v:dr,text:fb(dr),ct:fs(dr),u:'ms'},
+    {k:'rx',label:'Reaction time (average over all cues)',v:rx.length?sum(rx)/rx.length:null,text:rx.length?fm(sum(rx)/rx.length)+' · '+rx.length+' hit, '+miss+' missed':'—',ct:rx.length?fm(sum(rx)/rx.length):'—',u:'ms',better:'low'}
+  ];
+}
+const kv=a=>'<div class="kv">'+a.map(x=>`<div><span>${x.label}</span><span>${x.text}</span></div>`).join('')+'</div>';
+function roundHTML(r){
+  const hasAny=r.status!=='new'||r.accum>0;
+  let h=`<div class="sec"><h3>Round ${r.n} <em>${{new:'not started',paused:'paused',running:'recording',done:'finished'}[r.status]}</em></h3>`;
+  h+=hasAny?kv(totals(r)):'<div class="empty">No data yet. Start this round in training to record it.</div>';
+  h+='</div>';
+  if(!hasAny)return h;
+  for(const c of CTL)h+=`<div class="sec"><h3>${NAMES[c.id]}</h3>${kv(metrics(r,c.id))}${logHTML(r,c)}</div>`;
+  return h;
+}
+function logHTML(r,c){
+  const D=r.d[c.id],t3=ms=>(ms/1000).toFixed(3);
+  let h='';
+  if(c.type!=='joy'&&D.p.length){
+    const p=D.p.slice(-60),off=D.p.length-p.length;
+    h+=`<details class="log"><summary>Press log (${D.p.length}${off?', last 60':''})</summary><div class="tw"><table class="tbl"><tr><th>#</th><th>Down at (s)</th><th>Released at (s)</th><th>Held (ms)</th><th>Since previous tap (ms)</th></tr>`+
+      p.map((x,i)=>{const gi=off+i,prev=D.p[gi-1],iv=prev&&prev[2]===x[2]?(x[0]-prev[0]).toFixed(1):'—';
+        return `<tr><td>${gi+1}</td><td>${t3(x[0])}</td><td>${t3(x[1])}</td><td>${(x[1]-x[0]).toFixed(1)}</td><td>${iv}</td></tr>`;}).join('')+'</table></div></details>';
+  }
+  if(c.type==='rfire'&&D.drags.length){
+    h+=`<details class="log"><summary>Drag log (${D.drags.length})</summary><div class="tw"><table class="tbl"><tr><th>#</th><th>Started at (s)</th><th>Duration (ms)</th><th>Distance (px)</th><th>Farthest from start (px)</th></tr>`+
+      D.drags.slice(-60).map((x,i)=>`<tr><td>${i+1}</td><td>${t3(x.d)}</td><td>${x.dur.toFixed(1)}</td><td>${Math.round(x.dist)}</td><td>${Math.round(x.maxd)}</td></tr>`).join('')+'</table></div></details>';
+  }
+  if(c.type==='joy'&&D.ss.length){
+    h+=`<details class="log"><summary>Drag session log (${D.ss.length})</summary><div class="tw"><table class="tbl"><tr><th>#</th><th>Start (s)</th><th>End (s)</th><th>Duration (ms)</th><th>Travel (px)</th><th>Main direction</th></tr>`+
+      D.ss.slice(-60).map((x,i)=>{const m=Math.max(...x.dirMs);return `<tr><td>${i+1}</td><td>${t3(x.d)}</td><td>${t3(x.u)}</td><td>${(x.u-x.d).toFixed(1)}</td><td>${Math.round(x.dist)}</td><td>${m>0?DIRS[x.dirMs.indexOf(m)]:'—'}</td></tr>`;}).join('')+'</table></div></details>';
+  }
+  return h;
+}
+function fd(d,u){
+  const a=Math.abs(d),s=d>0?'+':d<0?'−':'±';
+  if(u==='ms')return s+(a>=1000?(a/1000).toFixed(2)+' s':(a<100?a.toFixed(1):Math.round(a))+' ms');
+  if(u==='/s')return s+a.toFixed(2)+' /s';
+  if(u==='px')return s+Math.round(a)+' px';
+  if(u==='%')return s+Math.round(a)+' %';
+  return s+Math.round(a);
+}
+function cmpTable(m1,m2){
+  const map2=Object.fromEntries(m2.map(x=>[x.k,x]));
+  let h='<div class="tw"><table class="tbl cmp"><tr><th>Metric</th><th>R1</th><th>R2</th><th>R2 − R1</th></tr>';
+  for(const a of m1){
+    const b=map2[a.k]; if(!b||a.k==='dirs')continue;
+    let dl='—',cl='';
+    if(typeof a.v==='number'&&typeof b.v==='number'){
+      const d=b.v-a.v; dl=fd(d,a.u);
+      if(a.better&&d!==0)cl=((a.better==='low')===(d<0))?'good':'bad';
+    }
+    h+=`<tr><td>${a.label}</td><td>${a.ct}</td><td>${b.ct}</td><td class="${cl}">${dl}</td></tr>`;
+  }
+  return h+'</table></div>';
+}
+function compareHTML(){
+  const [r1,r2]=S.rounds;
+  const have=r=>r.status!=='new'||r.accum>0;
+  if(!have(r1)||!have(r2))return `<div class="sec"><div class="empty">Comparison needs data in both rounds. Round 1: ${have(r1)?'recorded':'empty'}. Round 2: ${have(r2)?'recorded':'empty'}.</div></div>`;
+  let h=`<div class="sec"><h3>Total interaction</h3>${cmpTable(totals(r1),totals(r2))}<p class="hint" style="margin-top:8px">Green means better, red means worse, where a lower or higher value has a clear meaning. Rounds may run for different lengths, so rates are fairer than totals.</p></div>`;
+  for(const c of CTL)h+=`<div class="sec"><h3>${NAMES[c.id]}</h3>${cmpTable(metrics(r1,c.id),metrics(r2,c.id))}</div>`;
+  return h;
+}
+$('#r-1').onclick=()=>{S.resView=1;renderResults();};
+$('#r-2').onclick=()=>{S.resView=2;renderResults();};
+$('#r-c').onclick=()=>{S.resView='c';renderResults();};
+$('#r-back').onclick=()=>go('main');
+
+/* ---------- main menu ---------- */
+function renderMain(){
+  const box=$('#m-rounds'); box.innerHTML='';
+  for(const r of S.rounds){
+    const taps=sum(TAPS.map(id=>r.d[id].p.length));
+    const st={new:'Not started',paused:'Paused',running:'Recording',done:'Finished'}[r.status];
+    const b=document.createElement('button'); b.className='rc'; b.setAttribute('aria-pressed',String(S.cur===r.n));
+    b.innerHTML=`<div class="n">Round ${r.n}</div><div class="s">${st}${r.accum>0?' · '+fs(r.accum)+' · '+taps+' taps':''}</div>`;
+    b.onclick=()=>{S.cur=r.n;saveState();renderMain();};
+    box.appendChild(b);
+  }
+}
+$('#m-start').onclick=()=>{S.editing=false;S.resultsOn=false;go('train');};
+$('#m-full').onclick=()=>{
+  try{const p=document.documentElement.requestFullscreen({navigationUI:'hide'});
+    p.then(()=>{wasFS=true;try{screen.orientation.lock('landscape').catch(()=>{});}catch(_){}})
+     .catch(()=>toast('This screen does not allow full screen here. Training still fills the screen in landscape.'));
+  }catch(_){toast('This screen does not allow full screen here. Training still fills the screen in landscape.');}
+};
+$('#m-hud').onclick=()=>{S.editing=true;S.editFrom='main';go('train');};
+$('#m-results').onclick=()=>{S.resView=S.rounds[S.cur-1].status!=='new'?S.cur:(S.rounds[0].status!=='new'?1:S.cur);go('res');};
+$('#m-reset').onclick=()=>arm($('#m-reset'),'Tap again to erase both rounds',()=>{
+  S.rounds=[newRound(1),newRound(2)];S.cur=1;$('#m-reset').textContent='Reset Session';saveState();renderMain();toast('Session reset. Layout and locks were kept.');});
+
+function go(name){
+  if(S.play)exitPlay();
+  for(const id of ['main','train','res'])$('#s-'+id).hidden=id!==name;
+  if(name==='main')renderMain();
+  if(name==='res')renderResults();
+  if(name==='train')syncBar();
+  applyPlay();
+  document.querySelectorAll('.scroll').forEach(s=>s.scrollTop=0);
+}
+let toastT=0;
+function toast(msg){if(S.play)return;const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true;},2800);}
+new ResizeObserver(()=>{if(!$('#s-train').hidden)measure();}).observe(arena);
+
+loadState(); renderMain(); syncBar();
+window.__ett={S,enterPlay,exitPlay,C,CTL,R,A,metrics,tapStats,go,measure};
+})();
+</script>
